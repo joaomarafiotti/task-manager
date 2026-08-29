@@ -36,10 +36,18 @@ resource "null_resource" "k3d_cluster" {
 
   provisioner "local-exec" {
     interpreter = ["PowerShell", "-Command"]
-    command     = <<-EOT
+
+    command = <<-EOT
       $ErrorActionPreference = "Stop"
+
       k3d cluster delete ${var.cluster_name} 2>$null
       k3d cluster create ${var.cluster_name} --servers 1 --agents 1 --wait
+
+      $apiPort = (docker port k3d-${var.cluster_name}-serverlb 6443/tcp | Select-Object -First 1).Split(':')[-1]
+
+      kubectl config set-cluster k3d-${var.cluster_name} --server="https://127.0.0.1:$apiPort"
+
+      kubectl cluster-info
     EOT
   }
 
@@ -51,7 +59,10 @@ resource "null_resource" "k3d_cluster" {
 }
 
 resource "null_resource" "import_image" {
-  depends_on = [null_resource.k3d_cluster, null_resource.build_image]
+  depends_on = [
+    null_resource.k3d_cluster,
+    null_resource.build_image
+  ]
 
   triggers = {
     image = "task-manager:local"
@@ -73,10 +84,13 @@ resource "null_resource" "deploy_app" {
 
   provisioner "local-exec" {
     interpreter = ["PowerShell", "-Command"]
-    command     = <<-EOT
+
+    command = <<-EOT
       $ErrorActionPreference = "Stop"
+
       kubectl apply -f "${path.module}/k8s/postgres.yaml"
       kubectl rollout status deployment/postgres --timeout=180s
+
       kubectl apply -f "${path.module}/k8s/task-manager.yaml"
       kubectl rollout status deployment/task-manager --timeout=240s
     EOT
@@ -87,20 +101,23 @@ resource "null_resource" "monitoring" {
   depends_on = [null_resource.deploy_app]
 
   triggers = {
-    stack = "prometheus-grafana-loki-promtail-v1"
+    stack = "prometheus-grafana-loki-promtail-v2"
   }
 
   provisioner "local-exec" {
     interpreter = ["PowerShell", "-Command"]
-    command     = <<-EOT
+
+    command = <<-EOT
       $ErrorActionPreference = "Stop"
 
       helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
       helm repo add grafana https://grafana.github.io/helm-charts --force-update
       helm repo update
 
+      kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
       helm upgrade --install monitoring prometheus-community/kube-prometheus-stack `
-        --namespace monitoring --create-namespace `
+        --namespace monitoring `
         --set grafana.adminPassword=admin `
         --set prometheus.prometheusSpec.retention=2h `
         --set prometheus.prometheusSpec.resources.requests.memory=256Mi `
@@ -111,8 +128,10 @@ resource "null_resource" "monitoring" {
       helm upgrade --install loki grafana/loki-stack `
         --namespace monitoring `
         --set grafana.enabled=false `
+        --set loki.isDefault=false `
         --set promtail.enabled=true
 
+      kubectl rollout restart deployment/monitoring-grafana -n monitoring
       kubectl rollout status deployment/monitoring-grafana -n monitoring --timeout=300s
     EOT
   }
@@ -120,8 +139,16 @@ resource "null_resource" "monitoring" {
 
 output "proximos_passos" {
   value = <<-EOT
-    Aplicacao: kubectl port-forward svc/task-manager 3000:3000
-    Grafana:   kubectl port-forward svc/monitoring-grafana 3001:80 -n monitoring
-    Login Grafana: admin / admin
+
+    Aplicacao:
+    kubectl port-forward svc/task-manager 3000:3000
+
+    Grafana:
+    kubectl port-forward svc/monitoring-grafana 3001:80 -n monitoring
+
+    Login Grafana:
+    usuario: admin
+    senha: admin
+
   EOT
 }
