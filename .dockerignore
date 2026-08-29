@@ -2,3 +2,7 @@ node_modules
 .next
 out
 build
+
+.git
+terraform/.terraform
+terraform/terraform.tfstate*
