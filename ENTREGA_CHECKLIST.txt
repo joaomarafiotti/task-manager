@@ -1,0 +1,23 @@
+CHECKLIST DE ENTREGA
+
+1. GitHub Actions executado com sucesso.
+2. Print TELA INTEIRA da pasta terraform mostrando os arquivos.
+3. Print TELA INTEIRA do comando terraform plan APOS o primeiro terraform apply.
+4. Print TELA INTEIRA da aplicacao no navegador.
+5. Print TELA INTEIRA do Grafana com dashboard do Kubernetes aberto.
+6. Rodar terraform destroy ao final.
+
+Comandos principais:
+  terraform init
+  terraform apply
+  terraform plan
+
+Aplicacao:
+  kubectl port-forward svc/task-manager 3000:3000
+  http://localhost:3000
+
+Grafana:
+  kubectl port-forward svc/monitoring-grafana 3001:80 -n monitoring
+  http://localhost:3001
+  usuario: admin
+  senha: admin
